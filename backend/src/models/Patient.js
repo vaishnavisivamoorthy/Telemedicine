@@ -1,34 +1,45 @@
 const mongoose = require('mongoose');
-const crypto = require('crypto-js');
-const SECRET = process.env.AES_SECRET;
+const cryptoJs = require('crypto-js');
 
-const patientSchema = new mongoose.Schema({
-  name:           { type: String, required: true },
-  email:          { type: String, required: true, unique: true },
-  password:       { type: String, required: true },
-  dob:            { type: Date },
-  phone:          { type: String },
-  address:        { type: String },
-  allergies:      [{ type: String }],
-  medicalHistory: { type: String },
-  role:           { type: String, default: 'patient' }
-}, { timestamps: true });
+let Patient;
 
-// Encrypt sensitive fields before saving
-patientSchema.pre('save', function(next) {
-  if (this.isModified('medicalHistory') && this.medicalHistory) {
-    this.medicalHistory = crypto.AES.encrypt(
-      JSON.stringify(this.medicalHistory), SECRET
-    ).toString();
-  }
-  next();
-});
+try {
+  Patient = mongoose.model('Patient');
+} catch {
+  const patientSchema = new mongoose.Schema({
+    name:           { type: String, required: true },
+    email:          { type: String, required: true, unique: true },
+    password:       { type: String, required: true },
+    dob:            { type: Date },
+    phone:          { type: String },
+    address:        { type: String },
+    allergies:      [{ type: String }],
+    medicalHistory: { type: String },
+    role:           { type: String, default: 'patient' }
+  }, { timestamps: true });
 
-// Decrypt when reading
-patientSchema.methods.getDecryptedHistory = function() {
-  if (!this.medicalHistory) return null;
-  const bytes = crypto.AES.decrypt(this.medicalHistory, SECRET);
-  return JSON.parse(bytes.toString(crypto.enc.Utf8));
-};
+  patientSchema.pre('save', function(next) {
+    try {
+      const SECRET = process.env.AES_SECRET;
+      if (this.isModified('medicalHistory') && this.medicalHistory) {
+        this.medicalHistory = cryptoJs.AES.encrypt(
+          this.medicalHistory, SECRET
+        ).toString();
+      }
+      next();
+    } catch(err) {
+      next(err);
+    }
+  });
 
-module.exports = mongoose.model('Patient', patientSchema);
+  patientSchema.methods.getDecryptedHistory = function() {
+    const SECRET = process.env.AES_SECRET;
+    if (!this.medicalHistory) return null;
+    const bytes = cryptoJs.AES.decrypt(this.medicalHistory, SECRET);
+    return bytes.toString(cryptoJs.enc.Utf8);
+  };
+
+  Patient = mongoose.model('Patient', patientSchema);
+}
+
+module.exports = Patient;
