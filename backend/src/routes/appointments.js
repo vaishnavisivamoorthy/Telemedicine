@@ -72,4 +72,27 @@ router.patch('/:id/cancel', authMiddleware, async (req, res) => {
   }
 });
 
+// Confirm appointment (doctor only)
+router.patch('/:id/confirm', authMiddleware, async (req, res) => {
+  try {
+    const appt = await Appointment.findByIdAndUpdate(
+      req.params.id, { status: 'confirmed' }, { new: true }
+    );
+    res.json(appt);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Complete appointment (doctor only)
+router.patch('/:id/complete', authMiddleware, async (req, res) => {
+  try {
+    const appt = await Appointment.findByIdAndUpdate(
+      req.params.id, { status: 'completed' }, { new: true }
+    );
+    res.json(appt);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
 module.exports = router;
