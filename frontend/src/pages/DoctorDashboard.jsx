@@ -91,7 +91,7 @@ export default function DoctorDashboard() {
           <Avatar sx={{ bgcolor: '#66bb6a', width: 36, height: 36 }}>
             {user?.name?.[0]?.toUpperCase()}
           </Avatar>
-          <Typography>Dr. {user?.name}</Typography>
+          <Typography>{user?.name}</Typography>
           <Button color="inherit" startIcon={<Logout />}
             onClick={handleLogout}>Logout</Button>
         </Box>
@@ -104,7 +104,7 @@ export default function DoctorDashboard() {
                      background: 'linear-gradient(135deg, #1b5e20, #66bb6a)',
                      color: 'white' }}>
           <Typography variant="h5" fontWeight={700}>
-            Good day, Dr. {user?.name}! 🩺
+            Good day, {user?.name}! 🩺
           </Typography>
           <Typography sx={{ mt: 1, opacity: 0.9 }}>
             You have {upcoming.length} upcoming appointment{upcoming.length !== 1 ? 's' : ''} today.

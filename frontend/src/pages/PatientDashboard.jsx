@@ -189,7 +189,7 @@ export default function PatientDashboard() {
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Person fontSize="small" color="primary" />
                     <Typography fontWeight={600}>
-                      Dr. {appt.doctorId?.name || 'Unknown'}
+                      {appt.doctorId?.name || 'Unknown'}
                     </Typography>
                   </Box>
                   <Typography variant="body2" color="text.secondary" mt={0.5}>

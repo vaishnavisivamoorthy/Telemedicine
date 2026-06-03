@@ -2,8 +2,10 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
+
 import PatientDashboard from './pages/PatientDashboard';
 import DoctorDashboard from './pages/DoctorDashboard';
+import VideoRoom from './pages/VideoRoom';
 
 const Protected = ({ children, role }) => {
   const { user } = useAuth();
@@ -22,12 +24,14 @@ function AppRoutes() {
           <PatientDashboard />
         </Protected>
       } />
+      
       <Route path="/doctor" element={
         <Protected role="doctor">
         <DoctorDashboard />
         </Protected>
       } />
       
+      <Route path="/video-room" element={<VideoRoom />} />
     </Routes>
   );
 }
