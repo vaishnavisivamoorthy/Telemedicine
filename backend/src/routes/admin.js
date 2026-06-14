@@ -23,9 +23,14 @@ router.get('/doctors', authMiddleware, adminOnly, async (req, res) => {
 router.get('/patients', authMiddleware, adminOnly, async (req, res) => {
   try {
     const Patient = require('../models/Patient');
-    const patients = await Patient.find({}, '-password').sort({ name: 1 });
+    // Exclude admin role from patient list
+    const patients = await Patient.find(
+      { role: { $ne: 'admin' } },
+      '-password'
+    ).sort({ name: 1 });
     res.json(patients);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    res.status(500).json({ error: err.message }); }
 });
 
 // Add doctor
@@ -58,4 +63,25 @@ router.delete('/doctors/:id', authMiddleware, adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// In appointments GET route, add filter
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const filter = req.user.role === 'patient'
+      ? { patientId: req.user.id }
+      : { doctorId: req.user.id };
+
+    const appointments = await Appointment.find(filter)
+      .populate({
+        path: 'patientId',
+        match: { role: { $ne: 'admin' } },  // exclude admins
+        select: 'name email phone'
+      })
+      .populate('doctorId', 'name specialization')
+      .sort({ startTime: 1 });
+
+    res.json(appointments.filter(a => a.patientId !== null));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 module.exports = router;

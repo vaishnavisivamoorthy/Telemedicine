@@ -164,14 +164,33 @@ router.patch('/:id/complete', authMiddleware, async (req, res) => {
   }
 });
 
-// Public route — no auth needed (for landing page)
+// Public doctors (landing page) - exclude admins
 router.get('/public-doctors', async (req, res) => {
   try {
     const Doctor = require('../models/Doctor');
     const { specialization } = req.query;
-    const filter = specialization ? { specialization } : {};
+    const filter = {
+      role: { $ne: 'admin' },  // exclude admins
+      ...(specialization ? { specialization } : {})
+    };
     const doctors = await Doctor.find(filter, 'name specialization')
       .limit(10);
+    res.json(doctors);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Authenticated doctors list - exclude admins
+router.get('/doctors', authMiddleware, async (req, res) => {
+  try {
+    const Doctor = require('../models/Doctor');
+    const { specialization } = req.query;
+    const filter = {
+      role: { $ne: 'admin' },  // exclude admins
+      ...(specialization ? { specialization } : {})
+    };
+    const doctors = await Doctor.find(filter, 'name specialization email');
     res.json(doctors);
   } catch (err) {
     res.status(500).json({ error: err.message });
