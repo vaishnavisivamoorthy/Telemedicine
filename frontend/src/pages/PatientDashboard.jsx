@@ -115,43 +115,42 @@ export default function PatientDashboard() {
   };
 
   const handleDownloadPrescription = async (appt) => {
-    try {
-      setError('');
-      const res = await API.get(`/prescriptions/patient/${user.id}`);
-      const prescriptions = res.data;
+  try {
+    setError('');
+    const res = await API.get(`/prescriptions/patient/${user.id}`);
+    const prescriptions = res.data;
 
-      if (prescriptions.length === 0) {
-        setError('No prescription found for this appointment');
-        return;
-      }
-
-      const doctorId = appt.doctorId?._id || appt.doctorId;
-      const match = prescriptions.find(p =>
-        (p.doctorId?._id || p.doctorId)?.toString() === doctorId?.toString()
-      ) || prescriptions[0];
-
-      const pdfRes = await API.post('/prescriptions/generate', {
-        patientId:   user.id,
-        patientName: user.name,
-        medications: match.medications,
-        notes:       match.notes || ''
-      }, { responseType: 'blob' });
-
-      const url  = window.URL.createObjectURL(new Blob([pdfRes.data]));
-      const link = document.createElement('a');
-      link.href  = url;
-      link.setAttribute('download',
-        `prescription-${user.name}-${new Date().toLocaleDateString()}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      setSuccess('Prescription downloaded successfully!');
-    } catch (err) {
-      setError('Could not download prescription. Ask your doctor to generate one first.');
-      console.error(err);
+    if (prescriptions.length === 0) {
+      setError('No prescription found yet. Ask your doctor to generate one.');
+      return;
     }
-  };
+
+    const doctorId = appt.doctorId?._id || appt.doctorId;
+    const match = prescriptions.find(p =>
+      (p.doctorId?._id || p.doctorId)?.toString() === doctorId?.toString()
+    ) || prescriptions[0];
+
+    // Download existing PDF by ID — does NOT regenerate with wrong doctor
+    const pdfRes = await API.get(
+      `/prescriptions/download/${match._id}`,
+      { responseType: 'blob' }
+    );
+
+    const url  = window.URL.createObjectURL(new Blob([pdfRes.data]));
+    const link = document.createElement('a');
+    link.href  = url;
+    link.setAttribute('download',
+      `prescription-${user.name}-${new Date(match.createdAt).toLocaleDateString()}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    setSuccess('Prescription downloaded successfully!');
+  } catch (err) {
+    setError('Could not download prescription.');
+    console.error(err);
+  }
+};
 
   const handleLogout = () => { logout(); navigate('/'); };
 
