@@ -8,7 +8,7 @@ import {
   CallEnd, FiberManualRecord
 } from '@mui/icons-material';
 
-const SIGNAL_URL  = 'http://localhost:5001';
+const SIGNAL_URL = import.meta.env.VITE_SIGNAL_URL || 'http://localhost:5001';
 const ROOM_ID     = 'test-room-001';
 const ICE_SERVERS = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
