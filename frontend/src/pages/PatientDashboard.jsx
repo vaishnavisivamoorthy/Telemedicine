@@ -6,11 +6,12 @@ import {
   Box, Typography, Button, Paper, Grid, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Alert, Avatar, Divider, Card, CardContent,
-  FormControl, InputLabel, Select, MenuItem
+  FormControl, Tabs, Tab
 } from '@mui/material';
 import {
   CalendarMonth, VideoCall, MedicalServices,
-  Logout, Person, AccessTime, CheckCircle, Cancel
+  Logout, Person, AccessTime, CheckCircle,
+  Cancel, Download
 } from '@mui/icons-material';
 
 const SPECIALIZATIONS = [
@@ -30,6 +31,7 @@ export default function PatientDashboard() {
   const [success, setSuccess]           = useState('');
   const [filterSpec, setFilterSpec]     = useState('All');
   const [step, setStep]                 = useState(1);
+  const [apptTab, setApptTab]           = useState(0);
   const [form, setForm] = useState({
     doctorId: '', date: '', selectedSlot: null
   });
@@ -107,8 +109,48 @@ export default function PatientDashboard() {
   const handleCancel = async (id) => {
     try {
       await API.patch(`/appointments/${id}/cancel`);
+      setSuccess('Appointment cancelled.');
       fetchAppointments();
     } catch (err) { console.error(err); }
+  };
+
+  const handleDownloadPrescription = async (appt) => {
+    try {
+      setError('');
+      const res = await API.get(`/prescriptions/patient/${user.id}`);
+      const prescriptions = res.data;
+
+      if (prescriptions.length === 0) {
+        setError('No prescription found for this appointment');
+        return;
+      }
+
+      const doctorId = appt.doctorId?._id || appt.doctorId;
+      const match = prescriptions.find(p =>
+        (p.doctorId?._id || p.doctorId)?.toString() === doctorId?.toString()
+      ) || prescriptions[0];
+
+      const pdfRes = await API.post('/prescriptions/generate', {
+        patientId:   user.id,
+        patientName: user.name,
+        medications: match.medications,
+        notes:       match.notes || ''
+      }, { responseType: 'blob' });
+
+      const url  = window.URL.createObjectURL(new Blob([pdfRes.data]));
+      const link = document.createElement('a');
+      link.href  = url;
+      link.setAttribute('download',
+        `prescription-${user.name}-${new Date().toLocaleDateString()}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setSuccess('Prescription downloaded successfully!');
+    } catch (err) {
+      setError('Could not download prescription. Ask your doctor to generate one first.');
+      console.error(err);
+    }
   };
 
   const handleLogout = () => { logout(); navigate('/'); };
@@ -142,6 +184,7 @@ export default function PatientDashboard() {
       </Box>
 
       <Box sx={{ p: 4 }}>
+
         {/* Welcome Banner */}
         <Paper sx={{ p: 3, mb: 3, borderRadius: 3,
                      background: 'linear-gradient(135deg, #1565c0, #42a5f5)',
@@ -157,30 +200,30 @@ export default function PatientDashboard() {
         {/* Stats */}
         <Grid container spacing={3} mb={3}>
           {[
-            { label: 'Total',     value: appointments.length,
-              icon: <CalendarMonth sx={{ fontSize: 40, color: '#1565c0' }} />,
+            { label: 'Total', value: appointments.length,
+              icon: <CalendarMonth sx={{ fontSize:40, color:'#1565c0' }} />,
               bg: '#e3f2fd' },
             { label: 'Upcoming',
               value: appointments.filter(a =>
                 a.status === 'pending' || a.status === 'confirmed').length,
-              icon: <AccessTime sx={{ fontSize: 40, color: '#2e7d32' }} />,
+              icon: <AccessTime sx={{ fontSize:40, color:'#2e7d32' }} />,
               bg: '#e8f5e9' },
             { label: 'Completed',
               value: appointments.filter(a =>
                 a.status === 'completed').length,
-              icon: <CheckCircle sx={{ fontSize: 40, color: '#f57c00' }} />,
+              icon: <CheckCircle sx={{ fontSize:40, color:'#f57c00' }} />,
               bg: '#fff3e0' },
             { label: 'Cancelled',
               value: appointments.filter(a =>
                 a.status === 'cancelled').length,
-              icon: <Cancel sx={{ fontSize: 40, color: '#c62828' }} />,
+              icon: <Cancel sx={{ fontSize:40, color:'#c62828' }} />,
               bg: '#ffebee' },
           ].map((s, i) => (
             <Grid item xs={12} sm={6} md={3} key={i}>
               <Card sx={{ borderRadius: 3, background: s.bg }}>
-                <CardContent sx={{ display: 'flex',
-                                   justifyContent: 'space-between',
-                                   alignItems: 'center' }}>
+                <CardContent sx={{ display:'flex',
+                                   justifyContent:'space-between',
+                                   alignItems:'center' }}>
                   <Box>
                     <Typography variant="h4" fontWeight={700}>
                       {s.value}
@@ -196,105 +239,155 @@ export default function PatientDashboard() {
           ))}
         </Grid>
 
-        {success && <Alert severity="success" sx={{ mb: 2 }}
+        {success && <Alert severity="success" sx={{ mb:2 }}
           onClose={() => setSuccess('')}>{success}</Alert>}
+        {error   && <Alert severity="error"   sx={{ mb:2 }}
+          onClose={() => setError('')}>{error}</Alert>}
 
-        {/* Appointments */}
-        <Paper sx={{ p: 3, borderRadius: 3 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between',
-                     alignItems: 'center', mb: 3 }}>
+        {/* Tabbed Appointments */}
+        <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
+          <Box sx={{ display:'flex', justifyContent:'space-between',
+                     alignItems:'center', px:3, pt:2 }}>
             <Typography variant="h6" fontWeight={700}>
               📅 My Appointments
             </Typography>
             <Button variant="contained" startIcon={<CalendarMonth />}
-              onClick={() => { setError(''); setStep(1); setOpenBook(true); }}
+              onClick={() => {
+                setError(''); setStep(1); setOpenBook(true);
+              }}
               sx={{ borderRadius: 2 }}>
               Book Appointment
             </Button>
           </Box>
-          <Divider sx={{ mb: 2 }} />
 
-          {appointments.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 6,
-                       color: 'text.secondary' }}>
-              <CalendarMonth sx={{ fontSize: 60, opacity: 0.3 }} />
-              <Typography mt={2}>No appointments yet.</Typography>
-            </Box>
-          ) : (
-            appointments.map(appt => (
-  <Paper key={appt._id} variant="outlined"
-    sx={{ p: 2, mb: 2, borderRadius: 2,
-          borderLeft: `4px solid ${
-            appt.status === 'confirmed' ? '#2e7d32' :
-            appt.status === 'completed' ? '#1565c0' :
-            appt.status === 'cancelled' ? '#c62828' : '#f57c00'
-          }` }}>
-    <Box sx={{ display: 'flex', justifyContent: 'space-between',
-               alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-      <Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Person fontSize="small" color="primary" />
-          <Typography fontWeight={600}>
-            Dr. {appt.doctorId?.name || 'Unknown'}
-          </Typography>
-          <Chip label={appt.status} size="small"
-            color={statusColor(appt.status)} />
-        </Box>
-        <Typography variant="body2" color="text.secondary" mt={0.5}>
-          📅 {new Date(appt.startTime).toLocaleDateString('en-IN', {
-            weekday: 'short', day: 'numeric',
-            month: 'short', year: 'numeric'
-          })}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          🕐 {new Date(appt.startTime).toLocaleTimeString('en-IN', {
-            hour: '2-digit', minute: '2-digit', hour12: true
-          })} — {new Date(appt.endTime).toLocaleTimeString('en-IN', {
-            hour: '2-digit', minute: '2-digit', hour12: true
-          })}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          🏥 {appt.doctorId?.specialization || 'General Physician'}
-        </Typography>
-      </Box>
+          <Tabs value={apptTab} onChange={(_, v) => setApptTab(v)}
+            sx={{ px:2, borderBottom:'1px solid #e0e0e0' }}>
+            {[
+              { label: 'Upcoming',
+                count: appointments.filter(a =>
+                  a.status === 'pending' ||
+                  a.status === 'confirmed').length,
+                color: '#1565c0' },
+              { label: 'Completed',
+                count: appointments.filter(a =>
+                  a.status === 'completed').length,
+                color: '#2e7d32' },
+              { label: 'Cancelled',
+                count: appointments.filter(a =>
+                  a.status === 'cancelled').length,
+                color: '#c62828' },
+            ].map((t, i) => (
+              <Tab key={i}
+                label={
+                  <Box sx={{ display:'flex', alignItems:'center', gap:1 }}>
+                    {t.label}
+                    <Chip label={t.count} size="small"
+                      sx={{ background:t.color, color:'white',
+                            height:18, fontSize:10 }} />
+                  </Box>
+                }
+              />
+            ))}
+          </Tabs>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        {/* Join call for confirmed */}
-        {appt.status === 'confirmed' && (
-          <Button size="small" variant="contained"
-            startIcon={<VideoCall />}
-            onClick={() => navigate('/video-room')}
-            sx={{ borderRadius: 2, background: '#2e7d32' }}>
-            Join Call
-          </Button>
-        )}
-        {/* Cancel for pending or confirmed */}
-        {(appt.status === 'pending' ||
-          appt.status === 'confirmed') && (
-          <Button size="small" variant="outlined"
-            color="error" startIcon={<Cancel />}
-            onClick={() => handleCancel(appt._id)}
-            sx={{ borderRadius: 2 }}>
-            Cancel
-          </Button>
-        )}
-        {/* Completed badge */}
-        {appt.status === 'completed' && (
-          <Chip icon={<CheckCircle />}
-            label="Consultation done"
-            color="info" variant="outlined" size="small" />
-        )}
-        {/* Cancelled badge */}
-        {appt.status === 'cancelled' && (
-          <Chip icon={<Cancel />}
-            label="Cancelled"
-            color="error" variant="outlined" size="small" />
-        )}
-      </Box>
-    </Box>
-  </Paper>
-))
-          )}
+          <Box sx={{ p: 3 }}>
+            {(() => {
+              const filtered = appointments.filter(a =>
+                apptTab === 0
+                  ? (a.status === 'pending' || a.status === 'confirmed')
+                  : apptTab === 1
+                    ? a.status === 'completed'
+                    : a.status === 'cancelled'
+              );
+
+              if (filtered.length === 0) return (
+                <Box sx={{ textAlign:'center', py:6,
+                           color:'text.secondary' }}>
+                  <CalendarMonth sx={{ fontSize:60, opacity:0.3 }} />
+                  <Typography mt={2}>
+                    No appointments here yet.
+                  </Typography>
+                </Box>
+              );
+
+              return filtered.map(appt => (
+                <Paper key={appt._id} variant="outlined"
+                  sx={{ p:2, mb:2, borderRadius:2,
+                        borderLeft:`4px solid ${
+                          appt.status === 'confirmed' ? '#2e7d32' :
+                          appt.status === 'completed' ? '#1565c0' :
+                          appt.status === 'cancelled' ? '#c62828' : '#f57c00'
+                        }` }}>
+                  <Box sx={{ display:'flex', justifyContent:'space-between',
+                             alignItems:'center',
+                             flexWrap:'wrap', gap:1 }}>
+                    <Box>
+                      <Box sx={{ display:'flex',
+                                 alignItems:'center', gap:1 }}>
+                        <Person fontSize="small" color="primary" />
+                        <Typography fontWeight={600}>
+                          Dr. {appt.doctorId?.name || 'Unknown'}
+                        </Typography>
+                        <Chip label={appt.status} size="small"
+                          color={statusColor(appt.status)} />
+                      </Box>
+                      <Typography variant="body2"
+                        color="text.secondary" mt={0.5}>
+                        🏥 {appt.doctorId?.specialization ||
+                            'General Physician'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        📅 {new Date(appt.startTime)
+                          .toLocaleDateString('en-IN', {
+                            weekday:'short', day:'numeric',
+                            month:'short', year:'numeric'
+                          })}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        🕐 {new Date(appt.startTime)
+                          .toLocaleTimeString('en-IN', {
+                            hour:'2-digit', minute:'2-digit', hour12:true
+                          })} — {new Date(appt.endTime)
+                          .toLocaleTimeString('en-IN', {
+                            hour:'2-digit', minute:'2-digit', hour12:true
+                          })}
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ display:'flex',
+                               alignItems:'center', gap:1 }}>
+                      {appt.status === 'confirmed' && (
+                        <Button size="small" variant="contained"
+                          startIcon={<VideoCall />}
+                          onClick={() => navigate('/video-room')}
+                          sx={{ borderRadius:2, background:'#2e7d32' }}>
+                          Join Call
+                        </Button>
+                      )}
+                      {(appt.status === 'pending' ||
+                        appt.status === 'confirmed') && (
+                        <Button size="small" variant="outlined"
+                          color="error" startIcon={<Cancel />}
+                          onClick={() => handleCancel(appt._id)}
+                          sx={{ borderRadius:2 }}>
+                          Cancel
+                        </Button>
+                      )}
+                      {appt.status === 'completed' && (
+                        <Button size="small" variant="outlined"
+                          color="primary" startIcon={<Download />}
+                          onClick={() =>
+                            handleDownloadPrescription(appt)}
+                          sx={{ borderRadius:2 }}>
+                          Prescription
+                        </Button>
+                      )}
+                    </Box>
+                  </Box>
+                </Paper>
+              ));
+            })()}
+          </Box>
         </Paper>
       </Box>
 
@@ -302,35 +395,35 @@ export default function PatientDashboard() {
       <Dialog open={openBook}
         onClose={() => { setOpenBook(false); setError(''); }}
         maxWidth="md" fullWidth>
-
         <DialogTitle>
           <Typography variant="h6" fontWeight={700}>
             📅 Book New Appointment
           </Typography>
-          {/* Step indicator */}
-          <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-            {['Choose Doctor', 'Pick Date & Slot', 'Confirm'].map((s, i) => (
-              <Chip key={i} label={`${i + 1}. ${s}`} size="small"
-                color={step === i + 1 ? 'primary' : 'default'}
-                variant={step === i + 1 ? 'filled' : 'outlined'} />
-            ))}
+          <Box sx={{ display:'flex', gap:1, mt:1 }}>
+            {['Choose Doctor', 'Pick Date & Slot', 'Confirm']
+              .map((s, i) => (
+                <Chip key={i} label={`${i+1}. ${s}`} size="small"
+                  color={step === i+1 ? 'primary' : 'default'}
+                  variant={step === i+1 ? 'filled' : 'outlined'} />
+              ))}
           </Box>
         </DialogTitle>
 
-        <DialogContent sx={{ pt: 1, minHeight: 400 }}>
-          {error && <Alert severity="error" sx={{ mb: 2 }}
-            onClose={() => setError('')}>{error}</Alert>}
+        <DialogContent sx={{ pt:1, minHeight:400 }}>
+          {error && (
+            <Alert severity="error" sx={{ mb:2 }}
+              onClose={() => setError('')}>{error}</Alert>
+          )}
 
-          {/* ── STEP 1: Choose Doctor ── */}
+          {/* STEP 1 — Choose Doctor */}
           {step === 1 && (
             <Box>
-              {/* Specialization filter */}
               <Typography variant="subtitle2" fontWeight={700}
                 color="#1565c0" mb={1}>
                 Filter by Specialization
               </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap',
-                         gap: 1, mb: 3 }}>
+              <Box sx={{ display:'flex', flexWrap:'wrap',
+                         gap:1, mb:3 }}>
                 {SPECIALIZATIONS.map(spec => (
                   <Chip key={spec} label={spec} clickable
                     color={filterSpec === spec ? 'primary' : 'default'}
@@ -354,24 +447,25 @@ export default function PatientDashboard() {
                 ) : (
                   doctors.map(d => (
                     <Grid item xs={12} sm={6} key={d._id}>
-                      <Paper onClick={() => handleSelectDoctor(d._id)}
-                        sx={{ p: 2, borderRadius: 2, cursor: 'pointer',
+                      <Paper
+                        onClick={() => handleSelectDoctor(d._id)}
+                        sx={{ p:2, borderRadius:2, cursor:'pointer',
                               border: form.doctorId === d._id
                                 ? '2px solid #1565c0'
                                 : '2px solid #eee',
                               background: form.doctorId === d._id
                                 ? '#e3f2fd' : '#fafafa',
                               transition: 'all 0.2s',
-                              '&:hover': { borderColor: '#90caf9',
-                                           background: '#f0f7ff' } }}>
-                        <Box sx={{ display: 'flex',
-                                   alignItems: 'center', gap: 2 }}>
-                          <Avatar sx={{ width: 56, height: 56,
-                                        fontSize: 24, fontWeight: 700,
-                                        background: '#1565c0' }}>
+                              '&:hover': { borderColor:'#90caf9',
+                                           background:'#f0f7ff' } }}>
+                        <Box sx={{ display:'flex',
+                                   alignItems:'center', gap:2 }}>
+                          <Avatar sx={{ width:56, height:56,
+                                        fontSize:24, fontWeight:700,
+                                        background:'#1565c0' }}>
                             {d.name?.[0]?.toUpperCase()}
                           </Avatar>
-                          <Box sx={{ flex: 1 }}>
+                          <Box sx={{ flex:1 }}>
                             <Typography fontWeight={700}>
                               Dr. {d.name}
                             </Typography>
@@ -379,12 +473,12 @@ export default function PatientDashboard() {
                               color="text.secondary">
                               🏥 {d.specialization || 'General Physician'}
                             </Typography>
-                            <Box sx={{ display: 'flex',
-                                       alignItems: 'center',
-                                       gap: 1, mt: 0.5 }}>
+                            <Box sx={{ display:'flex',
+                                       alignItems:'center',
+                                       gap:1, mt:0.5 }}>
                               <Chip label="Available" size="small"
                                 color="success"
-                                sx={{ height: 18, fontSize: 10 }} />
+                                sx={{ height:18, fontSize:10 }} />
                               <Typography variant="caption"
                                 color="text.secondary">
                                 30-min slots
@@ -403,24 +497,25 @@ export default function PatientDashboard() {
             </Box>
           )}
 
-          {/* ── STEP 2: Pick Date & Slot ── */}
+          {/* STEP 2 — Pick Date & Slot */}
           {step === 2 && (
             <Box>
-              <Button size="small" onClick={() => setStep(1)} sx={{ mb: 2 }}>
+              <Button size="small" onClick={() => setStep(1)}
+                sx={{ mb:2 }}>
                 ← Back to Doctors
               </Button>
 
-              {/* Selected doctor recap */}
-              <Paper sx={{ p: 1.5, mb: 2, borderRadius: 2,
-                           background: '#e3f2fd',
-                           display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Avatar sx={{ background: '#1565c0' }}>
+              <Paper sx={{ p:1.5, mb:2, borderRadius:2,
+                           background:'#e3f2fd',
+                           display:'flex', alignItems:'center', gap:2 }}>
+                <Avatar sx={{ background:'#1565c0' }}>
                   {allDoctors.find(d => d._id === form.doctorId)
                     ?.name?.[0]?.toUpperCase()}
                 </Avatar>
                 <Box>
                   <Typography fontWeight={700} variant="body2">
-                    Dr. {allDoctors.find(d => d._id === form.doctorId)?.name}
+                    Dr. {allDoctors.find(d =>
+                      d._id === form.doctorId)?.name}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {allDoctors.find(d => d._id === form.doctorId)
@@ -434,23 +529,21 @@ export default function PatientDashboard() {
                 Select Appointment Date
               </Typography>
               <TextField fullWidth type="date"
-                InputLabelProps={{ shrink: true }}
+                InputLabelProps={{ shrink:true }}
                 inputProps={{
                   min: new Date().toISOString().split('T')[0]
                 }}
                 value={form.date}
                 onChange={e => handleDateChange(e.target.value)}
-                sx={{ mb: 3 }} />
+                sx={{ mb:3 }} />
 
-              {/* Time Slots */}
               {form.date && (
                 <>
                   <Typography variant="subtitle2" fontWeight={700}
                     color="#1565c0" mb={1}>
                     Available Time Slots — {new Date(form.date)
                       .toLocaleDateString('en-IN', {
-                        weekday: 'long', day: 'numeric',
-                        month: 'long'
+                        weekday:'long', day:'numeric', month:'long'
                       })}
                   </Typography>
 
@@ -460,50 +553,50 @@ export default function PatientDashboard() {
                     <Grid container spacing={1}>
                       {slots.map((slot, i) => (
                         <Grid item xs={6} sm={4} md={3} key={i}>
-                          <Paper onClick={() => handleSelectSlot(slot)}
-                            sx={{
-                              p: 1.5, borderRadius: 2, textAlign: 'center',
-                              cursor: slot.available
-                                ? 'pointer' : 'not-allowed',
-                              border: form.selectedSlot?.startTime
-                                        === slot.startTime
-                                ? '2px solid #1565c0'
-                                : slot.available
-                                  ? '2px solid #e0e0e0'
-                                  : '2px solid #ffcdd2',
-                              background: form.selectedSlot?.startTime
+                          <Paper
+                            onClick={() => handleSelectSlot(slot)}
+                            sx={{ p:1.5, borderRadius:2,
+                                  textAlign:'center',
+                                  cursor: slot.available
+                                    ? 'pointer' : 'not-allowed',
+                                  border: form.selectedSlot?.startTime
                                             === slot.startTime
-                                ? '#e3f2fd'
-                                : slot.available ? '#fff' : '#fff8f8',
-                              opacity: slot.available ? 1 : 0.6,
-                              transition: 'all 0.15s',
-                              '&:hover': slot.available
-                                ? { borderColor: '#90caf9',
-                                    background: '#f0f7ff' } : {}
-                            }}>
+                                    ? '2px solid #1565c0'
+                                    : slot.available
+                                      ? '2px solid #e0e0e0'
+                                      : '2px solid #ffcdd2',
+                                  background: form.selectedSlot?.startTime
+                                                === slot.startTime
+                                    ? '#e3f2fd'
+                                    : slot.available ? '#fff' : '#fff8f8',
+                                  opacity: slot.available ? 1 : 0.6,
+                                  transition: 'all 0.15s',
+                                  '&:hover': slot.available
+                                    ? { borderColor:'#90caf9',
+                                        background:'#f0f7ff' } : {}
+                                }}>
                             <Typography variant="body2" fontWeight={600}
                               color={slot.available
                                 ? 'text.primary' : 'text.disabled'}>
                               {new Date(slot.startTime)
                                 .toLocaleTimeString('en-IN', {
-                                  hour: '2-digit', minute: '2-digit',
-                                  hour12: true
+                                  hour:'2-digit', minute:'2-digit',
+                                  hour12:true
                                 })}
                             </Typography>
                             <Chip
                               label={slot.available ? 'Free' : 'Booked'}
                               size="small"
                               color={slot.available ? 'success' : 'error'}
-                              sx={{ mt: 0.5, height: 16, fontSize: 9 }} />
+                              sx={{ mt:0.5, height:16, fontSize:9 }} />
                           </Paper>
                         </Grid>
                       ))}
                     </Grid>
                   )}
 
-                  {/* Selected slot alert */}
                   {form.selectedSlot && (
-                    <Alert severity="success" sx={{ mt: 2 }}>
+                    <Alert severity="success" sx={{ mt:2 }}>
                       ✅ Selected: {form.selectedSlot.label} —
                       Duration: 30 minutes
                     </Alert>
@@ -513,22 +606,19 @@ export default function PatientDashboard() {
             </Box>
           )}
 
-          {/* ── STEP 3: Confirm ── */}
+          {/* STEP 3 — Confirm */}
           {step === 3 && (
             <Box>
-              <Button size="small" onClick={() => setStep(2)} sx={{ mb: 2 }}>
+              <Button size="small" onClick={() => setStep(2)}
+                sx={{ mb:2 }}>
                 ← Back to Slots
               </Button>
-              <Typography variant="subtitle2" fontWeight={700}
-                color="#1565c0" mb={2}>
-                Confirm Your Appointment
-              </Typography>
-              <Paper sx={{ p: 3, borderRadius: 2, background: '#f0f7ff',
-                           border: '1px solid #bbdefb' }}>
+              <Paper sx={{ p:3, borderRadius:2, background:'#f0f7ff',
+                           border:'1px solid #bbdefb' }}>
                 <Typography variant="h6" fontWeight={700} mb={2}>
                   📋 Booking Summary
                 </Typography>
-                <Divider sx={{ mb: 2 }} />
+                <Divider sx={{ mb:2 }} />
                 {[
                   ['👨‍⚕️ Doctor',
                    `Dr. ${allDoctors.find(d =>
@@ -538,17 +628,16 @@ export default function PatientDashboard() {
                      ?.specialization || 'General Physician'],
                   ['📅 Date',
                    new Date(form.date).toLocaleDateString('en-IN', {
-                     weekday: 'long', year: 'numeric',
-                     month: 'long', day: 'numeric'
+                     weekday:'long', year:'numeric',
+                     month:'long', day:'numeric'
                    })],
                   ['🕐 Time', form.selectedSlot?.label],
                   ['⏱️ Duration', '30 minutes'],
                   ['🌍 Timezone', 'Asia/Kolkata'],
                 ].map(([label, value]) => (
-                  <Box key={label} sx={{ display: 'flex',
-                                         justifyContent: 'space-between',
-                                         py: 1,
-                                         borderBottom: '1px solid #e3f2fd' }}>
+                  <Box key={label}
+                    sx={{ display:'flex', justifyContent:'space-between',
+                          py:1, borderBottom:'1px solid #e3f2fd' }}>
                     <Typography variant="body2" color="text.secondary">
                       {label}
                     </Typography>
@@ -562,30 +651,25 @@ export default function PatientDashboard() {
           )}
         </DialogContent>
 
-        <DialogActions sx={{ p: 3, pt: 1 }}>
+        <DialogActions sx={{ p:3, pt:1 }}>
           <Button onClick={() => { setOpenBook(false); setError(''); }}>
             Cancel
           </Button>
           {step === 1 && (
-            <Button variant="contained"
-              disabled={!form.doctorId}
-              onClick={() => setStep(2)}
-              sx={{ borderRadius: 2 }}>
+            <Button variant="contained" disabled={!form.doctorId}
+              onClick={() => setStep(2)} sx={{ borderRadius:2 }}>
               Next: Pick Date & Time →
             </Button>
           )}
           {step === 2 && (
-            <Button variant="contained"
-              disabled={!form.selectedSlot}
-              onClick={() => setStep(3)}
-              sx={{ borderRadius: 2 }}>
+            <Button variant="contained" disabled={!form.selectedSlot}
+              onClick={() => setStep(3)} sx={{ borderRadius:2 }}>
               Next: Review →
             </Button>
           )}
           {step === 3 && (
             <Button variant="contained" color="success"
-              onClick={handleBook}
-              sx={{ borderRadius: 2, px: 4 }}>
+              onClick={handleBook} sx={{ borderRadius:2, px:4 }}>
               ✅ Confirm Booking
             </Button>
           )}
