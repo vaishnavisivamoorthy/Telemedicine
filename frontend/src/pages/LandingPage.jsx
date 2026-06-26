@@ -82,9 +82,8 @@ export default function LandingPage() {
     setSpecDoctors([]);
     try {
       const res = await fetch(
-        `http://localhost:5000/api/appointments/public-doctors` +
-        `?specialization=${encodeURIComponent(specName)}`
-      );
+  `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/appointments/public-doctors?specialization=${encodeURIComponent(specName)}`
+);
       if (!res.ok) throw new Error('Server error');
       const data = await res.json();
       setSpecDoctors(Array.isArray(data) ? data : []);

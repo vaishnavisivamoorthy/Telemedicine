@@ -47,13 +47,26 @@ export default function DoctorDashboard() {
     } catch (err) { console.error(err); }
   };
 
-  const handleConfirm = async (id) => {
-    try {
-      await API.patch(`/appointments/${id}/confirm`);
-      setSuccess('Appointment confirmed!');
-      fetchAppointments();
-    } catch (err) { setError(err.response?.data?.error || 'Failed'); }
-  };
+ const handleConfirm = async (id) => {
+  try {
+    await API.patch(`/appointments/${id}/confirm`);
+  } catch (err) {
+    setError(err.response?.data?.error || 'Failed to confirm appointment');
+    return;
+  }
+
+  try {
+    await API.post('/payments/create', { appointmentId: id });
+    setSuccess('Appointment confirmed and payment invoice created!');
+  } catch (payErr) {
+    setError(
+      'Appointment confirmed, but payment creation failed: ' +
+      (payErr.response?.data?.error || payErr.message || 'Unknown error')
+    );
+  }
+
+  fetchAppointments();
+};
 
   const handleComplete = async (id) => {
     try {

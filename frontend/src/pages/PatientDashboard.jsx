@@ -2,16 +2,20 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import API from '../services/api';
+
 import {
   Box, Typography, Button, Paper, Grid, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, Alert, Avatar, Divider, Card, CardContent,
-  FormControl, Tabs, Tab
+  FormControl, InputLabel, Select, MenuItem,
+  Tabs, Tab
 } from '@mui/material';
+
 import {
   CalendarMonth, VideoCall, MedicalServices,
   Logout, Person, AccessTime, CheckCircle,
-  Cancel, Download
+  Cancel, Download, Payment, Receipt,
+  CreditCard, AccountBalance
 } from '@mui/icons-material';
 
 const SPECIALIZATIONS = [
@@ -36,7 +40,19 @@ export default function PatientDashboard() {
     doctorId: '', date: '', selectedSlot: null
   });
 
-  useEffect(() => { fetchAppointments(); fetchDoctors(); }, []);
+  const [payments, setPayments]         = useState([]);
+const [openPay, setOpenPay]           = useState(false);
+const [selectedPayment, setSelectedPayment] = useState(null);
+const [payMethod, setPayMethod]       = useState('card');
+const [cardNum, setCardNum]           = useState('');
+const [cardName, setCardName]         = useState('');
+const [cardExpiry, setCardExpiry]     = useState('');
+const [cardCVV, setCardCVV]           = useState('');
+const [upiId, setUpiId]              = useState('');
+const [payLoading, setPayLoading]     = useState(false);
+const [paySuccess, setPaySuccess]     = useState('');
+
+  useEffect(() => { fetchAppointments(); fetchDoctors(); fetchPayments(); }, []);
 
   const fetchAppointments = async () => {
     try {
@@ -62,6 +78,65 @@ export default function PatientDashboard() {
     } catch (err) { console.error(err); }
   };
 
+  const fetchPayments = async () => {
+  try {
+    const res = await API.get('/payments/my');
+    setPayments(res.data);
+  } catch (err) { console.error(err); }
+};
+
+const handleCreatePayment = async (appointmentId) => {
+  try {
+    await API.post('/payments/create', { appointmentId });
+    fetchPayments();
+    setSuccess('Payment invoice created!');
+  } catch (err) {
+    if (err.response?.data?.payment) fetchPayments();
+    else setError(err.response?.data?.error || 'Failed');
+  }
+};
+
+const handlePay = async () => {
+  try {
+    setPayLoading(true);
+    setError('');
+    if (payMethod === 'card') {
+      if (!cardNum || !cardName || !cardExpiry || !cardCVV) {
+        setError('Fill all card details'); setPayLoading(false); return;
+      }
+    }
+    if (payMethod === 'upi' && !upiId) {
+      setError('Enter UPI ID'); setPayLoading(false); return;
+    }
+    await API.post(`/payments/pay/${selectedPayment._id}`, {
+      paymentMethod: payMethod, cardNumber: cardNum, upiId
+    });
+    setPaySuccess('Payment successful! 🎉');
+    fetchPayments();
+    setTimeout(() => {
+      setOpenPay(false); setPaySuccess('');
+      setCardNum(''); setCardName(''); setCardExpiry(''); setCardCVV('');
+      setUpiId('');
+    }, 2000);
+  } catch (err) {
+    setError(err.response?.data?.error || 'Payment failed');
+  } finally { setPayLoading(false); }
+};
+
+const handleDownloadInvoice = async (paymentId) => {
+  try {
+    const res = await API.get(`/payments/invoice/${paymentId}`,
+      { responseType: 'blob' });
+    const url  = window.URL.createObjectURL(new Blob([res.data]));
+    const link = document.createElement('a');
+    link.href  = url;
+    link.setAttribute('download', `invoice-${paymentId}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) { setError('Invoice download failed'); }
+};
   const handleSpecFilter = (spec) => {
     setFilterSpec(spec);
     setDoctors(spec === 'All'
@@ -115,43 +190,42 @@ export default function PatientDashboard() {
   };
 
   const handleDownloadPrescription = async (appt) => {
-    try {
-      setError('');
-      const res = await API.get(`/prescriptions/patient/${user.id}`);
-      const prescriptions = res.data;
+  try {
+    setError('');
+    const res = await API.get(`/prescriptions/patient/${user.id}`);
+    const prescriptions = res.data;
 
-      if (prescriptions.length === 0) {
-        setError('No prescription found for this appointment');
-        return;
-      }
-
-      const doctorId = appt.doctorId?._id || appt.doctorId;
-      const match = prescriptions.find(p =>
-        (p.doctorId?._id || p.doctorId)?.toString() === doctorId?.toString()
-      ) || prescriptions[0];
-
-      const pdfRes = await API.post('/prescriptions/generate', {
-        patientId:   user.id,
-        patientName: user.name,
-        medications: match.medications,
-        notes:       match.notes || ''
-      }, { responseType: 'blob' });
-
-      const url  = window.URL.createObjectURL(new Blob([pdfRes.data]));
-      const link = document.createElement('a');
-      link.href  = url;
-      link.setAttribute('download',
-        `prescription-${user.name}-${new Date().toLocaleDateString()}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      setSuccess('Prescription downloaded successfully!');
-    } catch (err) {
-      setError('Could not download prescription. Ask your doctor to generate one first.');
-      console.error(err);
+    if (prescriptions.length === 0) {
+      setError('No prescription found yet. Ask your doctor to generate one.');
+      return;
     }
-  };
+
+    const doctorId = appt.doctorId?._id || appt.doctorId;
+    const match = prescriptions.find(p =>
+      (p.doctorId?._id || p.doctorId)?.toString() === doctorId?.toString()
+    ) || prescriptions[0];
+
+    // Download existing PDF by ID — does NOT regenerate with wrong doctor
+    const pdfRes = await API.get(
+      `/prescriptions/download/${match._id}`,
+      { responseType: 'blob' }
+    );
+
+    const url  = window.URL.createObjectURL(new Blob([pdfRes.data]));
+    const link = document.createElement('a');
+    link.href  = url;
+    link.setAttribute('download',
+      `prescription-${user.name}-${new Date(match.createdAt).toLocaleDateString()}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    setSuccess('Prescription downloaded successfully!');
+  } catch (err) {
+    setError('Could not download prescription.');
+    console.error(err);
+  }
+};
 
   const handleLogout = () => { logout(); navigate('/'); };
 
@@ -674,6 +748,260 @@ export default function PatientDashboard() {
             </Button>
           )}
         </DialogActions>
+      </Dialog>
+      {/* ── Payments Section ── */}
+        <Paper sx={{ borderRadius:3, overflow:'hidden', mt:3 }}>
+          <Box sx={{ px:3, pt:2.5, pb:1, display:'flex',
+                     justifyContent:'space-between', alignItems:'center' }}>
+            <Typography variant="h6" fontWeight={700}>
+              💳 My Payments
+            </Typography>
+            <Chip label={`${payments.filter(p=>p.status==='pending'||p.status==='overdue').length} pending`}
+              color="warning" size="small" />
+          </Box>
+          <Divider />
+          <Box sx={{ p:3 }}>
+            {payments.length === 0 ? (
+              <Box sx={{ textAlign:'center', py:5, color:'text.secondary' }}>
+                <Typography fontSize={48}>💳</Typography>
+                <Typography mt={1}>No payments yet.</Typography>
+                <Typography variant="body2" mt={0.5}>
+                  Payments are created after your appointment is confirmed.
+                </Typography>
+              </Box>
+            ) : (
+              payments.map(pay => {
+                const isOverdue = pay.status === 'overdue';
+                const isPaid    = pay.status === 'paid';
+                return (
+                  <Paper key={pay._id} variant="outlined"
+                    sx={{ p:2, mb:2, borderRadius:2,
+                          borderLeft:`4px solid ${
+                            isPaid    ? '#2e7d32' :
+                            isOverdue ? '#f44336' : '#f57c00'
+                          }`,
+                          background: isOverdue ? '#fff8f8' : 'white' }}>
+                    <Box sx={{ display:'flex', justifyContent:'space-between',
+                               alignItems:'center', flexWrap:'wrap', gap:1 }}>
+                      <Box>
+                        <Box sx={{ display:'flex', alignItems:'center', gap:1 }}>
+                          <Typography fontWeight={700}>
+                            {pay.invoiceNumber}
+                          </Typography>
+                          <Chip label={pay.status} size="small"
+                            color={isPaid ? 'success' : isOverdue ? 'error' : 'warning'} />
+                          {isOverdue && (
+                            <Chip label="⚠️ OVERDUE" size="small"
+                              sx={{ background:'#ffebee', color:'#c62828',
+                                    fontWeight:700, fontSize:10 }} />
+                          )}
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" mt={0.5}>
+                          👨‍⚕️ Dr. {pay.doctorId?.name} — {pay.doctorId?.specialization}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          📅 Due: {new Date(pay.dueDate).toLocaleDateString('en-IN')}
+                          {isPaid && ` | Paid: ${new Date(pay.paidAt).toLocaleDateString('en-IN')}`}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {pay.description}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ textAlign:'right' }}>
+                        <Typography variant="h6" fontWeight={800}
+                          color={isPaid ? '#2e7d32' : isOverdue ? '#f44336' : '#f57c00'}>
+                          ₹{(pay.amount * 1.18).toFixed(0)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          incl. 18% GST
+                        </Typography>
+                        <Box sx={{ display:'flex', gap:1, mt:1,
+                                   justifyContent:'flex-end' }}>
+                          {!isPaid && (
+                            <Button size="small" variant="contained"
+                              startIcon={<CreditCard />}
+                              onClick={() => {
+                                setSelectedPayment(pay);
+                                setOpenPay(true);
+                                setError('');
+                                setPaySuccess('');
+                              }}
+                              sx={{ borderRadius:2,
+                                    background: isOverdue ? '#f44336' : '#1565c0' }}>
+                              Pay Now
+                            </Button>
+                          )}
+                          <Button size="small" variant="outlined"
+                            startIcon={<Receipt />}
+                            onClick={() => handleDownloadInvoice(pay._id)}
+                            sx={{ borderRadius:2 }}>
+                            Invoice
+                          </Button>
+                        </Box>
+                      </Box>
+                    </Box>
+                  </Paper>
+                );
+              })
+            )}
+          </Box>
+        </Paper>
+        {/* ── Payment Dialog ── */}
+      <Dialog open={openPay}
+        onClose={() => { setOpenPay(false); setError(''); setPaySuccess(''); }}
+        maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Typography variant="h6" fontWeight={700}>
+            💳 Complete Payment
+          </Typography>
+          {selectedPayment && (
+            <Typography variant="body2" color="text.secondary">
+              {selectedPayment.invoiceNumber} — ₹{(selectedPayment.amount * 1.18).toFixed(0)} incl. GST
+            </Typography>
+          )}
+        </DialogTitle>
+        <DialogContent>
+          {paySuccess ? (
+            <Box sx={{ textAlign:'center', py:4 }}>
+              <Typography fontSize={60}>✅</Typography>
+              <Typography variant="h6" fontWeight={700} color="success.main" mt={2}>
+                {paySuccess}
+              </Typography>
+              <Typography color="text.secondary" mt={1}>
+                Your invoice will be ready to download shortly.
+              </Typography>
+            </Box>
+          ) : (
+            <Box>
+              {error && <Alert severity="error" sx={{ mb:2 }}>{error}</Alert>}
+
+              {/* Payment Summary */}
+              <Paper sx={{ p:2, mb:3, borderRadius:2, background:'#f0f7ff' }}>
+                <Typography variant="body2" fontWeight={700} color="#1565c0" mb={1}>
+                  Payment Summary
+                </Typography>
+                <Box sx={{ display:'flex', justifyContent:'space-between' }}>
+                  <Typography variant="body2">Consultation Fee</Typography>
+                  <Typography variant="body2">₹{selectedPayment?.amount}</Typography>
+                </Box>
+                <Box sx={{ display:'flex', justifyContent:'space-between' }}>
+                  <Typography variant="body2">GST (18%)</Typography>
+                  <Typography variant="body2">
+                    ₹{Math.round((selectedPayment?.amount || 0) * 0.18)}
+                  </Typography>
+                </Box>
+                <Divider sx={{ my:1 }} />
+                <Box sx={{ display:'flex', justifyContent:'space-between' }}>
+                  <Typography fontWeight={700}>Total</Typography>
+                  <Typography fontWeight={700} color="#1565c0">
+                    ₹{Math.round((selectedPayment?.amount || 0) * 1.18)}
+                  </Typography>
+                </Box>
+              </Paper>
+
+              {/* Payment Method Tabs */}
+              <Typography variant="subtitle2" fontWeight={700}
+                color="#1565c0" mb={1}>
+                Select Payment Method
+              </Typography>
+              <Box sx={{ display:'flex', gap:1, mb:2.5 }}>
+                {[
+                  { id:'card',       label:'💳 Card' },
+                  { id:'upi',        label:'📱 UPI' },
+                  { id:'netbanking', label:'🏦 Net Banking' },
+                  { id:'wallet',     label:'👛 Wallet' },
+                ].map(m => (
+                  <Chip key={m.id} label={m.label} clickable
+                    onClick={() => setPayMethod(m.id)}
+                    color={payMethod === m.id ? 'primary' : 'default'}
+                    variant={payMethod === m.id ? 'filled' : 'outlined'}
+                    sx={{ fontWeight: payMethod === m.id ? 700 : 400 }} />
+                ))}
+              </Box>
+
+              {/* Card Form */}
+              {payMethod === 'card' && (
+                <Box>
+                  <TextField fullWidth label="Cardholder Name" margin="dense"
+                    value={cardName}
+                    onChange={e => setCardName(e.target.value)}
+                    placeholder="As on card" />
+                  <TextField fullWidth label="Card Number" margin="dense"
+                    value={cardNum}
+                    onChange={e => setCardNum(e.target.value.replace(/\D/g,'').slice(0,16))}
+                    placeholder="1234 5678 9012 3456"
+                    inputProps={{ maxLength:16 }} />
+                  <Box sx={{ display:'flex', gap:2 }}>
+                    <TextField fullWidth label="Expiry (MM/YY)" margin="dense"
+                      value={cardExpiry}
+                      onChange={e => setCardExpiry(e.target.value)}
+                      placeholder="MM/YY" />
+                    <TextField fullWidth label="CVV" margin="dense"
+                      type="password" value={cardCVV}
+                      onChange={e => setCardCVV(e.target.value.slice(0,3))}
+                      placeholder="***" />
+                  </Box>
+                  <Alert severity="info" sx={{ mt:1 }}>
+                    🔒 Your payment is secured with 256-bit SSL encryption
+                  </Alert>
+                </Box>
+              )}
+
+              {/* UPI Form */}
+              {payMethod === 'upi' && (
+                <Box>
+                  <TextField fullWidth label="UPI ID" margin="dense"
+                    value={upiId}
+                    onChange={e => setUpiId(e.target.value)}
+                    placeholder="yourname@upi" />
+                  <Typography variant="caption" color="text.secondary">
+                    Supported: GPay, PhonePe, Paytm, BHIM
+                  </Typography>
+                </Box>
+              )}
+
+              {/* Net Banking */}
+              {payMethod === 'netbanking' && (
+                <Box>
+                  <FormControl fullWidth margin="dense">
+                    <InputLabel>Select Bank</InputLabel>
+                    <Select label="Select Bank" defaultValue="">
+                      {['SBI','HDFC','ICICI','Axis','Kotak','PNB'].map(b => (
+                        <MenuItem key={b} value={b}>{b} Bank</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Alert severity="info" sx={{ mt:1 }}>
+                    You will be redirected to your bank's secure portal
+                  </Alert>
+                </Box>
+              )}
+
+              {/* Wallet */}
+              {payMethod === 'wallet' && (
+                <Box sx={{ display:'flex', gap:1, flexWrap:'wrap', mt:1 }}>
+                  {['Paytm','PhonePe','Amazon Pay','Mobikwik'].map(w => (
+                    <Chip key={w} label={w} clickable variant="outlined"
+                      onClick={() => setUpiId(w)} />
+                  ))}
+                </Box>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        {!paySuccess && (
+          <DialogActions sx={{ p:3 }}>
+            <Button onClick={() => { setOpenPay(false); setError(''); }}>
+              Cancel
+            </Button>
+            <Button variant="contained" disabled={payLoading}
+              onClick={handlePay}
+              sx={{ borderRadius:2, px:4, background:'#1565c0',
+                    fontWeight:700 }}>
+              {payLoading ? 'Processing...' : `Pay ₹${Math.round((selectedPayment?.amount||0)*1.18)}`}
+            </Button>
+          </DialogActions>
+        )}
       </Dialog>
     </Box>
   );

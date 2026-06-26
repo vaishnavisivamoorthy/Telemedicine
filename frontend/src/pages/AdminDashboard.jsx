@@ -15,6 +15,8 @@ import {
   AdminPanelSettings, BarChart, LocalHospital
 } from '@mui/icons-material';
 
+import { Payment } from '@mui/icons-material';
+
 const SPECIALIZATIONS = [
   'General Physician', 'Cardiologist', 'Dermatologist',
   'Neurologist', 'Pediatrician', 'Orthopedist', 'Gynecologist',
@@ -34,19 +36,23 @@ export default function AdminDashboard() {
     name: '', email: '', password: '',
     specialization: 'General Physician', role: 'doctor'
   });
+  const [payments, setPayments]   = useState([]);
+  const [payFilter, setPayFilter] = useState('all');
 
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
-    try {
-      const [docRes, patRes] = await Promise.all([
-        API.get('/admin/doctors'),
-        API.get('/admin/patients')
-      ]);
-      setDoctors(docRes.data);
-      setPatients(patRes.data);
-    } catch (err) { console.error(err); }
-  };
+  try {
+    const [docRes, patRes, payRes] = await Promise.all([
+      API.get('/admin/doctors'),
+      API.get('/admin/patients'),
+      API.get('/payments/admin/all')
+    ]);
+    setDoctors(docRes.data);
+    setPatients(patRes.data);
+    setPayments(payRes.data);
+  } catch (err) { console.error(err); }
+};
 
   const handleAddDoctor = async () => {
     try {
@@ -85,6 +91,37 @@ export default function AdminDashboard() {
       (d.specialization || 'General Physician') === s);
     return acc;
   }, {});
+
+  const handleRemind = async (payId, patientName) => {
+  try {
+    await API.patch(`/payments/admin/remind/${payId}`);
+    setSuccess(`Reminder sent to ${patientName}!`);
+    fetchAll();
+  } catch (err) { setError('Failed to send reminder'); }
+};
+
+const handleUpdateStatus = async (payId, status) => {
+  try {
+    await API.patch(`/payments/admin/status/${payId}`, { status });
+    setSuccess('Payment status updated!');
+    fetchAll();
+  } catch (err) { setError('Failed'); }
+};
+
+const handleAdminInvoice = async (payId) => {
+  try {
+    const res = await API.get(`/payments/invoice/${payId}`,
+      { responseType:'blob' });
+    const url  = window.URL.createObjectURL(new Blob([res.data]));
+    const link = document.createElement('a');
+    link.href  = url;
+    link.setAttribute('download', `invoice-${payId}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) { setError('Invoice download failed'); }
+};
 
   return (
     <Box sx={{ minHeight:'100vh', background:'#f0f4f8' }}>
@@ -157,12 +194,14 @@ export default function AdminDashboard() {
               </Card>
             </Grid>
           ))}
+          
         </Grid>
-
+          
         {success && <Alert severity="success" sx={{ mb:2 }}
           onClose={() => setSuccess('')}>{success}</Alert>}
         {error   && <Alert severity="error"   sx={{ mb:2 }}
           onClose={() => setError('')}>{error}</Alert>}
+          
 
         {/* Tabs */}
         <Paper sx={{ borderRadius:3, overflow:'hidden' }}>
@@ -172,6 +211,7 @@ export default function AdminDashboard() {
             <Tab label="👨‍⚕️ Manage Doctors" />
             <Tab label="🧑‍🤝‍🧑 Manage Patients" />
             <Tab label="📊 By Specialization" />
+            <Tab label="💰 Payments" />
           </Tabs>
 
           {/* ── TAB 0: Doctors ── */}
@@ -318,6 +358,143 @@ export default function AdminDashboard() {
               ))}
             </Box>
           )}
+          {tab === 3 && (
+  <Box sx={{ p:3 }}>
+    {/* Summary Cards */}
+    <Grid container spacing={2} mb={3}>
+      {[
+        { label:'Total',   value:payments.length,
+          color:'#1565c0', filter:'all' },
+        { label:'Pending', value:payments.filter(p=>p.status==='pending').length,
+          color:'#f57c00', filter:'pending' },
+        { label:'Paid',    value:payments.filter(p=>p.status==='paid').length,
+          color:'#2e7d32', filter:'paid' },
+        { label:'Overdue', value:payments.filter(p=>p.status==='overdue').length,
+          color:'#f44336', filter:'overdue' },
+      ].map((s, i) => (
+        <Grid item xs={6} md={3} key={i}>
+          <Paper onClick={() => setPayFilter(s.filter)}
+            sx={{ p:2, borderRadius:2, textAlign:'center',
+                  cursor:'pointer', border:`2px solid ${
+                    payFilter === s.filter ? s.color : 'transparent'
+                  }`,
+                  background: payFilter === s.filter
+                    ? `${s.color}11` : 'white',
+                  transition:'all 0.2s',
+                  '&:hover':{ borderColor:s.color } }}>
+            <Typography variant="h4" fontWeight={800} color={s.color}>
+              {s.value}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {s.label}
+            </Typography>
+          </Paper>
+        </Grid>
+      ))}
+    </Grid>
+
+    {/* Overdue Alert */}
+    {payments.filter(p=>p.status==='overdue').length > 0 && (
+      <Alert severity="error" sx={{ mb:2 }}>
+        ⚠️ {payments.filter(p=>p.status==='overdue').length} payment(s) are overdue!
+        Send reminders to patients immediately.
+      </Alert>
+    )}
+
+    {/* Payment List */}
+    <Typography variant="h6" fontWeight={700} mb={2}>
+      {payFilter === 'all' ? 'All Payments' :
+       `${payFilter.charAt(0).toUpperCase()+payFilter.slice(1)} Payments`}
+      {' '}({payments.filter(p =>
+        payFilter === 'all' || p.status === payFilter).length})
+    </Typography>
+
+    {payments
+      .filter(p => payFilter === 'all' || p.status === payFilter)
+      .map(pay => {
+        const isOverdue = pay.status === 'overdue';
+        const isPaid    = pay.status === 'paid';
+        return (
+          <Paper key={pay._id} variant="outlined"
+            sx={{ p:2.5, mb:2, borderRadius:2,
+                  borderLeft:`4px solid ${
+                    isPaid    ? '#2e7d32' :
+                    isOverdue ? '#f44336' : '#f57c00'
+                  }`,
+                  background: isOverdue ? '#fff8f8' : 'white' }}>
+            <Box sx={{ display:'flex', justifyContent:'space-between',
+                       alignItems:'flex-start', flexWrap:'wrap', gap:2 }}>
+              <Box>
+                <Box sx={{ display:'flex', alignItems:'center', gap:1, mb:0.5 }}>
+                  <Typography fontWeight={700}>{pay.invoiceNumber}</Typography>
+                  <Chip label={pay.status} size="small"
+                    color={isPaid?'success':isOverdue?'error':'warning'} />
+                  {pay.reminderSent && (
+                    <Chip label="Reminder Sent ✓" size="small"
+                      sx={{ background:'#e3f2fd', color:'#1565c0',
+                            fontSize:10, height:20 }} />
+                  )}
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  👤 Patient: <strong>{pay.patientId?.name}</strong>
+                  {' '}({pay.patientId?.email})
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  👨‍⚕️ Doctor: Dr. {pay.doctorId?.name}
+                  {' '}— {pay.doctorId?.specialization}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  📅 Due: {new Date(pay.dueDate).toLocaleDateString('en-IN')}
+                  {isPaid && ` | Paid: ${new Date(pay.paidAt).toLocaleDateString('en-IN')}`}
+                </Typography>
+                {isPaid && (
+                  <Typography variant="body2" color="text.secondary">
+                    💳 {pay.paymentMethod?.toUpperCase()} — {pay.transactionId}
+                  </Typography>
+                )}
+              </Box>
+
+              <Box sx={{ textAlign:'right' }}>
+                <Typography variant="h6" fontWeight={800}
+                  color={isPaid?'#2e7d32':isOverdue?'#f44336':'#f57c00'}>
+                  ₹{pay.amount}
+                </Typography>
+                <Typography variant="caption" color="text.secondary"
+                  display="block">
+                  +GST = ₹{Math.round(pay.amount*1.18)}
+                </Typography>
+                <Box sx={{ display:'flex', gap:1, mt:1.5,
+                           justifyContent:'flex-end', flexWrap:'wrap' }}>
+                  {!isPaid && (
+                    <Button size="small" variant="outlined"
+                      color={isOverdue ? 'error' : 'warning'}
+                      disabled={pay.reminderSent}
+                      onClick={() => handleRemind(pay._id, pay.patientId?.name)}
+                      sx={{ borderRadius:2, fontSize:11 }}>
+                      {pay.reminderSent ? '✓ Reminded' : '🔔 Send Reminder'}
+                    </Button>
+                  )}
+                  {!isPaid && (
+                    <Button size="small" variant="outlined" color="success"
+                      onClick={() => handleUpdateStatus(pay._id, 'paid')}
+                      sx={{ borderRadius:2, fontSize:11 }}>
+                      Mark Paid
+                    </Button>
+                  )}
+                  <Button size="small" variant="outlined"
+                    onClick={() => handleAdminInvoice(pay._id)}
+                    sx={{ borderRadius:2, fontSize:11 }}>
+                    📄 Invoice
+                  </Button>
+                </Box>
+              </Box>
+            </Box>
+          </Paper>
+        );
+      })
+    }
+  </Box>
+)}
         </Paper>
       </Box>
 
