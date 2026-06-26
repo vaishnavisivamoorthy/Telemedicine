@@ -7,62 +7,96 @@ import {
   Select, MenuItem, FormControl, InputLabel,
   Paper, Alert
 } from '@mui/material';
+import { MedicalServices } from '@mui/icons-material';
 
 export default function Login() {
-  const [form, setForm]     = useState({ email: '', password: '', role: 'patient' });
-  const [error, setError]   = useState('');
-  const { login }           = useAuth();
-  const navigate            = useNavigate();
+  const [form, setForm]   = useState({
+    email: '', password: '', role: 'patient'
+  });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { login }         = useAuth();
+  const navigate          = useNavigate();
 
   const handleSubmit = async () => {
     try {
+      setError('');
+      setLoading(true);
+      if (!form.email || !form.password || !form.role) {
+        setError('All fields are required');
+        setLoading(false);
+        return;
+      }
       const res = await API.post('/auth/login', form);
       login(res.data.user, res.data.token);
-      if (res.data.user.role === 'doctor')  navigate('/doctor');
-      else if (res.data.user.role === 'admin') navigate('/admin');
-      else navigate('/patient');
+
+      const role = res.data.user.role;
+      if (role === 'doctor')       navigate('/doctor');
+      else if (role === 'admin')   navigate('/admin');
+      else                         navigate('/patient');
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex',
-               alignItems: 'center', justifyContent: 'center',
-               background: '#f0f4f8' }}>
-      <Paper sx={{ p: 4, width: 400, borderRadius: 3 }} elevation={3}>
-        <Typography variant="h5" fontWeight={700} mb={3} textAlign="center">
-          🏥 Telemedicine Login
-        </Typography>
+    <Box sx={{ minHeight:'100vh', display:'flex',
+               alignItems:'center', justifyContent:'center',
+               background:'linear-gradient(135deg, #e3f2fd, #f3e5f5)' }}>
+      <Paper sx={{ p:4, width:420, borderRadius:3 }} elevation={4}>
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        <Box sx={{ textAlign:'center', mb:3 }}>
+          <MedicalServices sx={{ fontSize:44, color:'#1565c0' }} />
+          <Typography variant="h5" fontWeight={800} color="#1565c0">
+            MediConnect
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Sign in to your account
+          </Typography>
+        </Box>
 
-        <TextField fullWidth label="Email" margin="normal"
-          value={form.email}
-          onChange={e => setForm({ ...form, email: e.target.value })} />
+        {error && <Alert severity="error" sx={{ mb:2 }}>{error}</Alert>}
+
+        <TextField fullWidth label="Email Address" margin="normal"
+          type="email" value={form.email}
+          onChange={e => setForm({ ...form, email:e.target.value })}
+          placeholder="your@email.com" />
 
         <TextField fullWidth label="Password" type="password" margin="normal"
           value={form.password}
-          onChange={e => setForm({ ...form, password: e.target.value })} />
+          onChange={e => setForm({ ...form, password:e.target.value })}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+          placeholder="Enter your password" />
 
         <FormControl fullWidth margin="normal">
-          <InputLabel>Role</InputLabel>
-          <Select value={form.role} label="Role"
-            onChange={e => setForm({ ...form, role: e.target.value })}>
-            <MenuItem value="patient">Patient</MenuItem>
-            <MenuItem value="doctor">Doctor</MenuItem>
+          <InputLabel>Login As</InputLabel>
+          <Select value={form.role} label="Login As"
+            onChange={e => setForm({ ...form, role:e.target.value })}>
+            <MenuItem value="patient">🧑‍🤝‍🧑 Patient</MenuItem>
+            <MenuItem value="doctor">👨‍⚕️ Doctor</MenuItem>
+            <MenuItem value="admin">🛡️ Admin</MenuItem>
           </Select>
         </FormControl>
 
         <Button fullWidth variant="contained" size="large"
-          sx={{ mt: 2, borderRadius: 2, py: 1.5 }}
+          disabled={loading}
+          sx={{ mt:3, borderRadius:2, py:1.5, fontWeight:700,
+                background:'#1565c0',
+                '&:hover': { background:'#0d47a1' } }}
           onClick={handleSubmit}>
-          Login
+          {loading ? 'Signing in...' : 'Sign In'}
         </Button>
 
-        <Button fullWidth sx={{ mt: 1 }}
+        <Button fullWidth sx={{ mt:1, color:'#1565c0' }}
           onClick={() => navigate('/register')}>
           Don't have an account? Register
+        </Button>
+
+        <Button fullWidth sx={{ mt:0.5, color:'#666', fontSize:13 }}
+          onClick={() => navigate('/')}>
+          ← Back to Home
         </Button>
       </Paper>
     </Box>
