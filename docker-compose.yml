@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: telemedicine-db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - telemedicine-net
+
+  backend:
+    build: ./backend
+    container_name: telemedicine-backend
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/telemedicine
+      - JWT_SECRET=your_jwt_secret
+      - AES_SECRET=your_aes_secret
+    depends_on:
+      - mongodb
+    networks:
+      - telemedicine-net
+
+  signaling:
+    build: ./signaling-server
+    container_name: telemedicine-signaling
+    ports:
+      - "5001:5001"
+    networks:
+      - telemedicine-net
+
+  frontend:
+    build: ./frontend
+    container_name: telemedicine-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - telemedicine-net
+
+volumes:
+  mongo-data:
+
+networks:
+  telemedicine-net:
+    driver: bridge
