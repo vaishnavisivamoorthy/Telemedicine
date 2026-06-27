@@ -6,8 +6,13 @@ const cors     = require('cors');
 const app = express();
 
 app.use(cors({
-  origin: '*',
-  credentials: false
+  origin: [
+    'http://localhost:5173',
+    'https://telemedicine1-one.vercel.app',
+    'https://telemedicine1-286frws0i-vaishnavi-s-internprojects.vercel.app'
+  ],
+  methods:     ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  credentials: true
 }));
 app.use(express.json());
 
